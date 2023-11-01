@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  serverless-api
+
+  Sample SAM Template for serverless-api
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 30
+    Architectures:
+        - x86_64
+
+Resources:
+  ServerlessApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      Auth:
+        ApiKeyRequired: true
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: serverless-api
+      Enabled: true
+
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: serverless-api
+      ApiStages:
+        - ApiId: !Ref ServerlessApi
+          Stage: dev
+
+  apiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+  
+  GetAllHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: app.handler_get_all
+      Environment:
+        Variables:
+          tableName: serverless-api-dev-table
+          tableIndexName: serverless-api-table-index-type-created
+      Events:
+        GetAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /v1/data
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+
+  GetOneHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: app.handler_get_one
+      Environment:
+        Variables:
+          tableName: serverless-api-dev-table
+          tableIndexName: serverless-api-table-index-type-created
+      Events:
+        GetAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /v1/data/{id}
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+
+  DeleteOneHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: app.handler_delete_one
+      Environment:
+        Variables:
+          tableName: serverless-api-dev-table
+          tableIndexName: serverless-api-table-index-type-created
+      Events:
+        GetAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /v1/data/{id}
+            Method: delete
+            Auth:
+              ApiKeyRequired: true
+
+  CreateHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: app.handler_create
+      Environment:
+        Variables:
+          tableName: serverless-api-dev-table
+          tableIndexName: serverless-api-table-index-type-created
+      Events:
+        GetAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /v1/data/create
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+
+  UpdateHandler:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: app.handler_update
+      Environment:
+        Variables:
+          tableName: serverless-api-dev-table
+          tableIndexName: serverless-api-table-index-type-created
+      Events:
+        GetAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /v1/data/{id}/update
+            Method: patch
+            Auth:
+              ApiKeyRequired: true
+  
+  DynamoRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: serverless-api-handler-dynamo
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:BatchGetItem'
+              - 'dynamodb:Query'
+              - 'dynamodb:PutItem'
+              - 'dynamodb:BatchWriteItem'
+              - 'dynamodb:DeleteItem'
+              - 'dynamodb:UpdateItem'
+            Resource: 
+              - !GetAtt Table.Arn
+              - Fn::Join: [ '', [ 'arn:aws:dynamodb:', !Ref "AWS::Region", ':*:table/serverless-api-dev-table/index/*'  ] ]
+      Roles:
+        - !Ref GetAllHandlerRole
+        - !Ref GetOneHandlerRole
+        - !Ref DeleteOneHandlerRole
+        - !Ref CreateHandlerRole
+        - !Ref UpdateHandlerRole
+
+  Table:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: serverless-api-dev-table
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+        - AttributeName: created
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: serverless-api-table-index-type-created
+          KeySchema:
+            - AttributeName: type
+              KeyType: HASH
+            - AttributeName: created
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+Outputs:
+  ServerlessApi:
+    Description: "API Gateway endpoint URL CRUD serverless API"
+    Value: !Sub "https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/dev"
+  GetAllHandler:
+    Description: "Get All Handler ARN"
+    Value: !GetAtt GetAllHandler.Arn
+  GetAllHandlerRole:
+    Description: "Get All Handler role ARN"
+    Value: !GetAtt GetAllHandlerRole.Arn
